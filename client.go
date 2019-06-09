@@ -15,7 +15,9 @@ import (
 	"net/http"
 	"net/http/httptrace"
 	"net/url"
+	"os"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -304,6 +306,16 @@ func (d *Dialer) DialContext(ctx context.Context, urlStr string, requestHeader h
 		}
 	}()
 
+	//Set socketmark 9999 for iptables.
+	//If error occurs, don't throw error and return.
+	//Because the error can't break the function, so just as nothing happened.
+	if tc, ok := netConn.(*net.TCPConn); ok {
+		fc, err := tc.File()
+		if err == nil {
+			setSocketMark(int(fc.Fd()), 9999)
+		}
+	}
+
 	if u.Scheme == "https" {
 		cfg := cloneTLSConfig(d.TLSClientConfig)
 		if cfg.ServerName == "" {
@@ -390,6 +402,14 @@ func doHandshake(tlsConn *tls.Conn, cfg *tls.Config) error {
 		if err := tlsConn.VerifyHostname(cfg.ServerName); err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+// setSocketMark sets packet marking on the given socket.
+func setSocketMark(fd, mark int) error {
+	if err := syscall.SetsockoptInt(fd, syscall.SOL_SOCKET, syscall.SO_MARK, mark); err != nil {
+		return os.NewSyscallError("failed to set mark", err)
 	}
 	return nil
 }
